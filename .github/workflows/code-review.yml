@@ -112,9 +112,12 @@ jobs:
           OIDC_PROXY_URL: ${{ github.event.inputs.oidc_proxy_url || vars.OIDC_PROXY_URL }}
           REVIEW_INSTRUCTIONS: ${{ github.event.inputs.review_instructions || 'Review the changes for correctness' }}
         run: |
-          ANTHROPIC_OIDC_PROXY_API_KEY=$(cat /tmp/code-review/oidc-token.txt)
-          export ANTHROPIC_OIDC_PROXY_API_KEY
+          OIDC_TOKEN=$(cat /tmp/code-review/oidc-token.txt)
           rm /tmp/code-review/oidc-token.txt
+
+          # Export to all provider env vars
+          export ANTHROPIC_OIDC_PROXY_API_KEY="$OIDC_TOKEN"
+          export XIAOMI_MIMO_OIDC_PROXY_API_KEY="$OIDC_TOKEN"
 
           mkdir -p "$HOME/.local/share/goose/sessions"
           mkdir -p "$HOME/.config/goose/custom_providers"
