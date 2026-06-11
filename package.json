@@ -1,5 +1,5 @@
 {
-  "name": "oidc-proxy",
+  "name": "oidc-api-broker",
   "version": "1.0.0",
   "private": true,
   "scripts": {
