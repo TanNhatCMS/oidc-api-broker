@@ -1,4 +1,4 @@
-name = "oidc-proxy"
+name = "oidc-api-broker"
 main = "src/index.js"
 compatibility_date = "2026-03-01"
 
@@ -7,18 +7,18 @@ bindings = [{ name = "TOKEN_BUCKET", class_name = "TokenBucket" }]
 
 [[migrations]]
 tag = "v1"
-new_classes = ["TokenBucket"]
+new_sqlite_classes = ["TokenBucket"]
 
 [vars]
 OIDC_ISSUER = "https://token.actions.githubusercontent.com"
-OIDC_AUDIENCE = "goose-oidc-proxy"
+OIDC_AUDIENCE = "oidc-api-broker"
 MAX_TOKEN_AGE_SECONDS = "1200"  # 20 minutes
 MAX_REQUESTS_PER_TOKEN = "200"
 RATE_LIMIT_PER_SECOND = "2"
 
-ALLOWED_REPOS = "aaif-goose/goose,aaif/goose"
+ALLOWED_REPOS = "TanNhatCMS/oidc-api-broker,TanNhatCMS/QuanLyCongViec"
 
-# Upstream configuration
+# --- Default upstream (Anthropic) ---
 UPSTREAM_URL = "https://api.anthropic.com"
 UPSTREAM_AUTH_HEADER = "x-api-key"
 # UPSTREAM_AUTH_PREFIX is unset — Anthropic expects a raw key, not "Bearer <key>"
@@ -28,3 +28,19 @@ CORS_EXTRA_HEADERS = "anthropic-version"
 
 # Set the upstream API key as a secret:
 #   npx wrangler secret put UPSTREAM_API_KEY
+
+# --- Xiaomi MiMo upstream (optional) ---
+# Routes requests with mimo-* models to Xiaomi's Anthropic-compatible API.
+# Models: mimo-v2.5-pro, mimo-v2.5, mimo-v2-pro, mimo-v2-omni, mimo-v2.5-pro-claude
+#MIMO_UPSTREAM_URL = "https://api.xiaomimimo.com/anthropic"
+MIMO_UPSTREAM_AUTH_HEADER = "api-key"
+# MIMO_UPSTREAM_AUTH_PREFIX is unset — MiMo expects a raw key via api-key header
+
+# Token-plan endpoint (alternative, Singapore region):
+MIMO_UPSTREAM_URL = "https://token-plan-sgp.xiaomimimo.com/anthropic"
+
+# Override built-in model list (comma-separated). Omit to use defaults.
+# MIMO_MODELS = "mimo-v2.5-pro,mimo-v2.5,mimo-v2-pro,mimo-v2-omni,mimo-v2.5-pro-claude"
+
+# Set the MiMo API key as a secret (falls back to UPSTREAM_API_KEY if unset):
+#   npx wrangler secret put MIMO_UPSTREAM_API_KEY

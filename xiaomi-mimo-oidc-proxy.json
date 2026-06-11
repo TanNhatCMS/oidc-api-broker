@@ -1,0 +1,39 @@
+{
+  "name": "xiaomi-mimo-oidc-proxy",
+  "engine": "anthropic",
+  "display_name": "Xiaomi MiMo (OIDC Proxy)",
+  "description": "Xiaomi MiMo API via OIDC proxy — uses a short-lived OIDC token instead of a long-lived API key",
+  "api_key_env": "XIAOMI_MIMO_OIDC_PROXY_API_KEY",
+  "base_url": "${OIDC_PROXY_URL}",
+  "models": [
+    {
+      "name": "mimo-v2.5-pro",
+      "context_limit": 200000
+    },
+    {
+      "name": "mimo-v2.5",
+      "context_limit": 200000
+    },
+    {
+      "name": "mimo-v2-pro",
+      "context_limit": 200000
+    },
+    {
+      "name": "mimo-v2-omni",
+      "context_limit": 200000
+    },
+    {
+      "name": "mimo-v2.5-pro-claude",
+      "context_limit": 200000
+    }
+  ],
+  "supports_streaming": true,
+  "env_vars": [
+    {
+      "name": "OIDC_PROXY_URL",
+      "required": true,
+      "secret": false,
+      "description": "URL of the OIDC proxy worker (e.g. https://oidc-api-broker.your-subdomain.workers.dev)"
+    }
+  ]
+}

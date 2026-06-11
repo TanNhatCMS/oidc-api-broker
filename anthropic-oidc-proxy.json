@@ -21,7 +21,7 @@
       "name": "OIDC_PROXY_URL",
       "required": true,
       "secret": false,
-      "description": "URL of the OIDC proxy worker (e.g. https://oidc-proxy.your-subdomain.workers.dev)"
+      "description": "URL of the OIDC proxy worker (e.g. https://oidc-api-broker.your-subdomain.workers.dev)"
     }
   ]
 }

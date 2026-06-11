@@ -1,19 +1,49 @@
 # OIDC API Broker
 
-A Cloudflare Worker that authenticates GitHub Actions OIDC tokens and brokers requests to an upstream API with an injected API key. CI workflows call APIs without storing long-lived secrets in GitHub.
+A Cloudflare Worker that authenticates GitHub Actions OIDC tokens and brokers requests to upstream APIs with injected API keys. CI workflows call APIs without storing long-lived secrets in GitHub.
+
+**Multi-provider**: routes to **Anthropic** or **Xiaomi MiMo** based on the `model` field in the request body.
 
 > **Forked from [aaif-goose/goose/oidc-proxy](https://github.com/aaif-goose/goose/tree/main/oidc-proxy)** — see [Attribution](#attribution) below.
 
 ## Architecture
 
 ```
-GitHub Actions (OIDC token) → Worker (validate JWT, inject API key) → Upstream API
+GitHub Actions ──(OIDC token)──► Worker ──(validate JWT, inject API key)──► Anthropic API
+                                                          │
+                                                          ├─ model: claude-* → Anthropic
+                                                          └─ model: mimo-*  → Xiaomi MiMo
 ```
 
 1. GitHub Actions mints an OIDC token with a configured audience
 2. Workflow sends requests to this proxy, passing the OIDC token as the API key
 3. Worker validates JWT against GitHub's JWKS, checks issuer / audience / age / repo
-4. Valid requests forwarded to upstream with the real API key injected
+4. Reads `model` from request body → routes to matching upstream
+5. Valid requests forwarded with the real API key injected
+
+## Supported Providers
+
+### Anthropic (default)
+
+| Model examples | Endpoint |
+|---|---|
+| `claude-sonnet-4-20250514`, `claude-3.5-haiku`, etc. | `https://api.anthropic.com` |
+
+### Xiaomi MiMo
+
+| Model | Notes |
+|---|---|
+| `mimo-v2.5-pro` | Latest flagship |
+| `mimo-v2.5` | Standard |
+| `mimo-v2.5-pro-claude` | Claude-compatible |
+| `mimo-v2-pro` | ⚠️ Deprecated June 30, 2026 — auto-routes to V2.5 |
+| `mimo-v2-omni` | ⚠️ Deprecated June 30, 2026 — auto-routes to V2.5 |
+
+Endpoints:
+- **Primary**: `https://api.xiaomimimo.com/anthropic/v1/messages`
+- **Token plan (SGP)**: `https://token-plan-sgp.xiaomimimo.com/anthropic/v1/messages`
+
+Auth: `api-key` header (raw key) or `Authorization: Bearer <key>`
 
 ## Setup
 
@@ -25,30 +55,53 @@ npm install
 
 Edit `wrangler.toml`:
 
+### Core
+
 | Variable | Description |
 |---|---|
 | `OIDC_ISSUER` | `https://token.actions.githubusercontent.com` |
-| `OIDC_AUDIENCE` | Audience your workflow requests (e.g. `goose-oidc-api-broker`) |
+| `OIDC_AUDIENCE` | Audience your workflow requests (e.g. `oidc-api-broker`) |
 | `MAX_TOKEN_AGE_SECONDS` | Upper bound on `iat` age (default `1200` = 20 min). Applied *in addition to* IdP's `exp` claim. |
 | `MAX_REQUESTS_PER_TOKEN` | Max requests per OIDC token (default `200`) |
 | `RATE_LIMIT_PER_SECOND` | Max requests/sec per token (default `2`) |
 | `ALLOWED_REPOS` | *(optional)* Comma-separated `owner/repo` list |
 | `ALLOWED_REFS` | *(optional)* Comma-separated allowed refs |
-| `UPSTREAM_URL` | Upstream API base URL |
-| `UPSTREAM_AUTH_HEADER` | Header name for API key (e.g. `x-api-key`, `Authorization`) |
-| `UPSTREAM_AUTH_PREFIX` | *(optional)* Prefix before key (e.g. `Bearer `) — omit for raw value |
+
+### Anthropic Upstream (default)
+
+| Variable | Description | Default |
+|---|---|---|
+| `UPSTREAM_URL` | Anthropic API base URL | `https://api.anthropic.com` |
+| `UPSTREAM_AUTH_HEADER` | Auth header name | `x-api-key` |
+| `UPSTREAM_AUTH_PREFIX` | *(optional)* Prefix before key | *(unset — raw key)* |
+
+### Xiaomi MiMo Upstream
+
+| Variable | Description | Default |
+|---|---|---|
+| `MIMO_UPSTREAM_URL` | MiMo API base URL | `https://api.xiaomimimo.com/anthropic` |
+| `MIMO_UPSTREAM_AUTH_HEADER` | Auth header name | `api-key` |
+| `MIMO_UPSTREAM_AUTH_PREFIX` | *(optional)* Prefix before key | *(unset)* |
+| `MIMO_MODELS` | *(optional)* Override built-in model list | `mimo-v2.5-pro,mimo-v2.5,mimo-v2-pro,mimo-v2-omni,mimo-v2.5-pro-claude` |
+
+### CORS
+
+| Variable | Description |
+|---|---|
 | `CORS_ORIGIN` | *(optional)* Allowed CORS origin |
 | `CORS_EXTRA_HEADERS` | *(optional)* Additional CORS allowed headers |
 
-Set the upstream API key as a secret:
+### Secrets
 
 ```bash
+# Anthropic API key (required for Anthropic models)
 npx wrangler secret put UPSTREAM_API_KEY
+
+# Xiaomi MiMo API key (required for MiMo models; falls back to UPSTREAM_API_KEY if unset)
+npx wrangler secret put MIMO_UPSTREAM_API_KEY
 ```
 
-### Examples
-
-**Anthropic**
+### Example `wrangler.toml` — Anthropic only
 
 ```toml
 UPSTREAM_URL = "https://api.anthropic.com"
@@ -56,12 +109,27 @@ UPSTREAM_AUTH_HEADER = "x-api-key"
 CORS_EXTRA_HEADERS = "anthropic-version"
 ```
 
-**OpenAI-compatible**
+### Example `wrangler.toml` — Anthropic + Xiaomi MiMo
 
 ```toml
-UPSTREAM_URL = "https://api.openai.com"
-UPSTREAM_AUTH_HEADER = "Authorization"
-UPSTREAM_AUTH_PREFIX = "Bearer "
+# Anthropic (default)
+UPSTREAM_URL = "https://api.anthropic.com"
+UPSTREAM_AUTH_HEADER = "x-api-key"
+CORS_EXTRA_HEADERS = "anthropic-version"
+
+# Xiaomi MiMo (mimo-* models)
+MIMO_UPSTREAM_URL = "https://api.xiaomimimo.com/anthropic"
+MIMO_UPSTREAM_AUTH_HEADER = "api-key"
+```
+
+### Example `wrangler.toml` — Xiaomi MiMo only (token plan)
+
+```toml
+# Point default upstream to MiMo — all requests go there
+UPSTREAM_URL = "https://token-plan-sgp.xiaomimimo.com/anthropic"
+UPSTREAM_AUTH_HEADER = "api-key"
+
+# No need for MIMO_* vars when using MiMo as the only upstream
 ```
 
 ## Usage in GitHub Actions
@@ -80,12 +148,36 @@ steps:
         core.setOutput('token', token);
         core.setSecret(token);
 
-  - name: Call API through proxy
+  - name: Call Anthropic through proxy
     env:
       ANTHROPIC_BASE_URL: https://oidc-api-broker.your-subdomain.workers.dev
       ANTHROPIC_API_KEY: ${{ steps.oidc.outputs.token }}
     run: goose run --recipe my-recipe.yaml
+
+  - name: Call MiMo through proxy
+    env:
+      MIMO_BASE_URL: https://oidc-api-broker.your-subdomain.workers.dev
+      MIMO_API_KEY: ${{ steps.oidc.outputs.token }}
+    run: |
+      curl "$MIMO_BASE_URL/v1/messages" \
+        -H "api-key: $MIMO_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d '{"model":"mimo-v2.5-pro","max_tokens":1024,"messages":[{"role":"user","content":"Hello"}]}'
 ```
+
+## Routing Logic
+
+```
+POST /v1/messages → read body.model
+  ├─ model in MIMO_MODELS? → MIMO_UPSTREAM_URL
+  └─ otherwise              → UPSTREAM_URL (Anthropic)
+```
+
+- Only POST requests are inspected for model-based routing
+- Non-POST requests (GET, etc.) always go to the default upstream
+- If body is not valid JSON, falls back to default upstream
+- Built-in model list: `mimo-v2.5-pro`, `mimo-v2.5`, `mimo-v2-pro`, `mimo-v2-omni`, `mimo-v2.5-pro-claude`
+- Override via `MIMO_MODELS` env var (comma-separated)
 
 ## Token Budget & Rate Limiting
 
@@ -94,7 +186,7 @@ Each OIDC token is tracked by its `jti` claim via a **Durable Object** (`TokenBu
 - **Budget** — `MAX_REQUESTS_PER_TOKEN` total requests per token (default 200). Returns `429` + `"Token budget exhausted"` when exhausted.
 - **Rate limit** — `RATE_LIMIT_PER_SECOND` requests/sec per token (default 2). Returns `429` + `"Rate limit exceeded"` + `Retry-After: 1`.
 
-Both enforced atomically — no race conditions per token.
+Both enforced atomically — no race conditions per token. Budget/rate limits apply regardless of upstream provider.
 
 ## Token Age vs Expiry
 
@@ -118,7 +210,7 @@ npm run deploy   # deploy to Cloudflare
 ```
 .
 ├── src/
-│   └── index.js          # Worker entry + TokenBucket Durable Object
+│   └── index.js          # Worker entry + TokenBucket DO + model routing
 ├── test/
 │   └── index.test.js     # Tests
 ├── docs/
@@ -150,4 +242,4 @@ For full license terms, see: <http://www.apache.org/licenses/LICENSE-2.0>
 
 ## License
 
-[Apache License 2.0](LICENSE) — Copyright 2024 Block, Inc.
+[Apache License 2.0](LICENSE) — Copyright 2026 KietNT.

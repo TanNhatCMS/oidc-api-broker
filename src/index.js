@@ -47,6 +47,20 @@ export class TokenBucket {
   }
 }
 
+/**
+ * Xiaomi MiMo models that route to MIMO_UPSTREAM_URL.
+ * Set MIMO_MODELS env var to comma-separated model names.
+ * Set MIMO_UPSTREAM_URL to the MiMo-compatible endpoint.
+ * Set MIMO_UPSTREAM_API_KEY as a secret (falls back to UPSTREAM_API_KEY).
+ */
+const BUILTIN_MIMO_MODELS = [
+  "mimo-v2.5-pro",
+  "mimo-v2.5",
+  "mimo-v2-pro",
+  "mimo-v2-omni",
+  "mimo-v2.5-pro-claude",
+];
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") {
@@ -78,22 +92,44 @@ export default {
       return jsonResponse(429, { error: "Token budget exhausted" });
     }
 
+    // Determine upstream based on model in request body
     const url = new URL(request.url);
-    const upstreamUrl = `${env.UPSTREAM_URL}${url.pathname}${url.search}`;
+    const mimoModels = env.MIMO_MODELS
+      ? env.MIMO_MODELS.split(",").map((m) => m.trim()).filter(Boolean)
+      : BUILTIN_MIMO_MODELS;
+    let useMimo = false;
+
+    if (env.MIMO_UPSTREAM_URL && request.method === "POST") {
+      try {
+        const body = await request.clone().json();
+        useMimo = mimoModels.includes(body.model);
+      } catch {
+        // Not JSON — route to default upstream
+      }
+    }
+
+    const upstreamBase = useMimo ? env.MIMO_UPSTREAM_URL : env.UPSTREAM_URL;
+    const upstreamUrl = `${upstreamBase}${url.pathname}${url.search}`;
 
     const headers = new Headers(request.headers);
     headers.delete("Authorization");
     headers.delete("x-api-key");
 
-    const authHeader = env.UPSTREAM_AUTH_HEADER || "Authorization";
-    const authPrefix = env.UPSTREAM_AUTH_PREFIX;
+    const authHeader = useMimo
+      ? (env.MIMO_UPSTREAM_AUTH_HEADER || "api-key")
+      : (env.UPSTREAM_AUTH_HEADER || "Authorization");
+    const authPrefix = useMimo
+      ? env.MIMO_UPSTREAM_AUTH_PREFIX
+      : env.UPSTREAM_AUTH_PREFIX;
+    const apiKey = useMimo
+      ? (env.MIMO_UPSTREAM_API_KEY || env.UPSTREAM_API_KEY)
+      : env.UPSTREAM_API_KEY;
+
     headers.set(
       authHeader,
-      authPrefix
-        ? `${authPrefix}${env.UPSTREAM_API_KEY}`
-        : env.UPSTREAM_API_KEY,
+      authPrefix ? `${authPrefix}${apiKey}` : apiKey,
     );
-    headers.set("Host", new URL(env.UPSTREAM_URL).host);
+    headers.set("Host", new URL(upstreamBase).host);
 
     const response = await fetch(upstreamUrl, {
       method: request.method,
