@@ -120,7 +120,6 @@ jobs:
           mkdir -p "$HOME/.config/goose/custom_providers"
           cp anthropic-oidc-proxy.json "$HOME/.config/goose/custom_providers/"
           cp xiaomi-mimo-oidc-proxy.json "$HOME/.config/goose/custom_providers/"
-          cp xiaomi-mimo-token-plan.json "$HOME/.config/goose/custom_providers/"
 
           goose run \
             --recipe .github/recipes/code-review.yaml \
