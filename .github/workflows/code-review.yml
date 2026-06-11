@@ -97,7 +97,9 @@ jobs:
       - name: Install tools
         run: |
           apt-get update
-          apt-get install -y ripgrep jq
+          apt-get install -y ripgrep jq curl
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Download review inputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -156,6 +158,7 @@ jobs:
 
       - name: Download review output
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        continue-on-error: true
         with:
           name: code-review-output
           path: /tmp/output
